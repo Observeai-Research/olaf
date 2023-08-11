@@ -186,7 +186,7 @@ This section describes various configuration parameters required for each of the
    can be uploaded as a text file as well. Internally, this uses `es.search` of  `elasticsearch-py`.
 6. `Load Session Name`: Name of the current session.
 
-### Lambda
+### AWS Lambda
 1. `Lambda ARN`: Lambda ARN to load test.
 2. `AWS region`: Region of AWS resource under test.
 3. `AWS access key / AWS secret key`: AWS credentials having access to the resource under test.
@@ -202,7 +202,7 @@ This section describes various configuration parameters required for each of the
    can be uploaded as a text file as well. 
 5. `Load Session Name`: Name of the current session.
 
-### Sagemaker
+### AWS Sagemaker
 1. `Sagemaker endpoint`: Endpoint of sagemaker to test.
 2. `Predictor type`: Pytorch, Sklearn and Tensorflow are the supported predictor types.
 3. `Input/Output Serializer`: The serializer the model is expected to work with. 
@@ -212,9 +212,10 @@ This section describes various configuration parameters required for each of the
    can be uploaded as a text file as well.
 7. `Batch Mode`: When enabled, a batch of size `b` is created by random sampling `b` inputs from the list of query JSON.
    Each batch is then sent as a single request.
+8. `Multi-Model Endpoint`: Support to load test multiple models hosted at same endpoint.
 8. `Load Session Name`: Name of the current session.
 
-### SQS
+### AWS SQS
 1. `SQS Name`: Name (not arn) of the SQS queue to generate load in. 
 2.` AWS region`: Region of AWS resource under test. 
 3. `AWS access key / AWS secret key`: AWS credentials having access to the resource under test.
@@ -224,7 +225,7 @@ This section describes various configuration parameters required for each of the
    message attribute per message.
 6. `Load Session Name`: Name of the current session.
 
-### SQS
+### AWS SNS
 1. `SNS ARN`: ARN of the SNS topic to generate load in. 
 2. `AWS region`: Region of AWS resource under test. 
 3. `AWS access key / AWS secret key`: AWS credentials having access to the resource under test.
@@ -233,6 +234,12 @@ This section describes various configuration parameters required for each of the
 5. `message Attribute JSON`: Message Attribute to be sent with every message. We currently do not support 
    message attribute per message.
 6. `Load Session Name`: Name of the current session.
+
+### Vector Search (beta)
+We support following Databases for load testing vector search.
+1. `Elasticsearch` 
+2. `Pinecone` 
+3. `Redis`
 
 ### Cocktail (beta)
 Cocktail is multi-resource load testing/generation at once. You can generate loads of following forms:
