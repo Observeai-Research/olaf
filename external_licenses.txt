@@ -1,0 +1,15 @@
+ Name                   Version      License
+ HiYaPyCo               0.5.1        GNU General Public License v3 or later (GPLv3+)
+ boto3                  1.26.33      Apache Software License
+ botocore               1.29.33      Apache Software License
+ cryptocode             0.1          MIT License
+ elasticsearch          8.5.3        Apache Software License
+ kafka-python           2.0.2        Apache Software License
+ locust                 2.14.0       MIT License
+ pydantic               1.10.2       MIT License
+ pymongo                4.3.3        Apache Software License
+ randomname             0.1.5        MIT License
+ redis                  4.4.0        MIT License
+ sagemaker              2.125.0      Apache Software License
+ streamlit              1.9.0        Apache 2
+ tinydb                 4.7.0        MIT License
