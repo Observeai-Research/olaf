@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "olaf"
+version = "2.1.0"
+description = "gui based tool for load generation and testing across various resources."
+authors = ["Aashraya Sachdeva <aashraya.sachdeva@observe.ai>"]
+license = "apache 2.0"
+
+[tool.poetry.dependencies]
+python = "~3.8"
+boto3 = "^1.24.18"
+botocore = "^1.27.18"
+cryptocode = "^0.1"
+elasticsearch = "^8.2.3"
+HiYaPyCo = "^0.5.0"
+locust = "^2.8.6"
+pydantic = "^1.9.1"
+pymongo = "^4.1.1"
+sagemaker = "^2.96.0"
+tinydb = "^4.7.0"
+randomname = "^0.1.5"
+streamlit = "1.9.0"
+kafka-python = "^2.0.2"
+redis = "^4.3.4"
+pinecone-client = "^2.2.4"
+protobuf = "3.20"
+altair = "<5"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

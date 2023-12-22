@@ -1,0 +1,11 @@
+aws_config:
+  key: --
+  secret: --
+
+s3_config:
+  region: --
+  bucket_name: --
+  base_path: --
+
+locust_config:
+  port: 12311

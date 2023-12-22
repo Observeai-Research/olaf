@@ -3,7 +3,7 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <a href="https://github.com/Observeai-Research/one-load-auditor-framework">
+  <a href="https://github.com/Observeai-Research/olaf">
     <img src="images/logo.png" alt="🤖" width="80" height="80">
   </a>
 
@@ -12,9 +12,9 @@
   <p align="center">
     An easy to use load generation and testing framework for anyone.
     <br />
-    <a href="https://github.com/Observeai-Research/one-load-auditor-framework/issues">Report Bug</a>
+    <a href="https://github.com/Observeai-Research/olaf/issues">Report Bug</a>
     ·
-    <a href="https://github.com/Observeai-Research/one-load-auditor-framework/issues">Request Feature</a>
+    <a href="https://github.com/Observeai-Research/olaf/issues">Request Feature</a>
   </p>
 </div>
 
@@ -186,7 +186,7 @@ This section describes various configuration parameters required for each of the
    can be uploaded as a text file as well. Internally, this uses `es.search` of  `elasticsearch-py`.
 6. `Load Session Name`: Name of the current session.
 
-### AWS Lambda
+### Lambda
 1. `Lambda ARN`: Lambda ARN to load test.
 2. `AWS region`: Region of AWS resource under test.
 3. `AWS access key / AWS secret key`: AWS credentials having access to the resource under test.
@@ -202,20 +202,21 @@ This section describes various configuration parameters required for each of the
    can be uploaded as a text file as well. 
 5. `Load Session Name`: Name of the current session.
 
-### AWS Sagemaker
+### Sagemaker
 1. `Sagemaker endpoint`: Endpoint of sagemaker to test.
 2. `Predictor type`: Pytorch, Sklearn and Tensorflow are the supported predictor types.
 3. `Input/Output Serializer`: The serializer the model is expected to work with. 
 4. `AWS region`: Region of AWS resource under test. 
 5. `AWS access key / AWS secret key`: AWS credentials having access to the resource under test.
 6. `List of query JSON`: Input to Sagemaker model endpoint. Each input needs to be part of list. Alternatively this 
-   can be uploaded as a text file as well.
+   can be uploaded as a text file as well. If the endpoint to be tested is a multi-model endpoint, you are expected to
+   pass the input as a list of dictionaries of format: 
+   `{"payload": YOUR_INPUT_PAYLOAD, "target_model": MODEL_TAR_FILE_NAME}` 
 7. `Batch Mode`: When enabled, a batch of size `b` is created by random sampling `b` inputs from the list of query JSON.
    Each batch is then sent as a single request.
-8. `Multi-Model Endpoint`: Support to load test multiple models hosted at same endpoint.
 8. `Load Session Name`: Name of the current session.
 
-### AWS SQS
+### SQS
 1. `SQS Name`: Name (not arn) of the SQS queue to generate load in. 
 2.` AWS region`: Region of AWS resource under test. 
 3. `AWS access key / AWS secret key`: AWS credentials having access to the resource under test.
@@ -225,7 +226,7 @@ This section describes various configuration parameters required for each of the
    message attribute per message.
 6. `Load Session Name`: Name of the current session.
 
-### AWS SNS
+### SQS
 1. `SNS ARN`: ARN of the SNS topic to generate load in. 
 2. `AWS region`: Region of AWS resource under test. 
 3. `AWS access key / AWS secret key`: AWS credentials having access to the resource under test.
@@ -235,11 +236,12 @@ This section describes various configuration parameters required for each of the
    message attribute per message.
 6. `Load Session Name`: Name of the current session.
 
-### Vector Search (beta)
-We support following Databases for load testing vector search.
-1. `Elasticsearch` 
-2. `Pinecone` 
-3. `Redis`
+### PineCone Vector Search
+1. `API KEY`: API Key of the VectorDB 
+2. `ENVIRONMENT NAME`: ENV name of the AWS region
+3. `Index Name`: Index name of the VectorDB
+4. `List of query JSON`: List of Vector Query
+5. `Load Session Name`: Name of the current session.
 
 ### Cocktail (beta)
 Cocktail is multi-resource load testing/generation at once. You can generate loads of following forms:

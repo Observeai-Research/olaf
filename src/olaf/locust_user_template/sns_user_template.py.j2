@@ -1,0 +1,122 @@
+import os
+import time
+import json
+import random
+
+import botocore.config
+import boto3
+from locust import User, events, task, LoadTestShape
+from locust.runners import MasterRunner, WorkerRunner
+
+from src.constants import PARAMS_JSON_FILENAME
+from src.olaf.datamodel import SNSUserParams
+from src.olaf.custom_event_handler import add_session_dir_arg, on_test_quit
+
+events.init_command_line_parser.add_listener(add_session_dir_arg)
+events.quitting.add_listener(on_test_quit)
+
+NAME = "sns"
+REQUEST_TYPE = "sns_publish_message"
+
+wait_time = 10
+
+
+def update_wait_time_on_users(environment, msg, **kwargs):
+    global wait_time
+    wait_time = msg.data["wait_time"]
+
+
+def on_acknowledge(msg, **kwargs):
+    pass
+
+
+@events.init.add_listener
+def on_locust_init(environment, **_kwargs):
+    if not isinstance(environment.runner, MasterRunner):
+        environment.runner.register_message('send_wait_time', update_wait_time_on_users)
+    if not isinstance(environment.runner, WorkerRunner):
+        environment.runner.register_message('acknowledge_users', on_acknowledge)
+
+
+def constant_configurable_throughput():
+    def wait_time_func(self):
+        global wait_time
+        if not hasattr(self, "_cp_last_run"):
+            self._cp_last_wait_time = wait_time
+            self._cp_last_run = time.time()
+            return wait_time
+        else:
+            run_time = time.time() - self._cp_last_run - self._cp_last_wait_time
+            self._cp_last_wait_time = max(0, wait_time - run_time)
+            self._cp_last_run = time.time()
+            return self._cp_last_wait_time
+
+    return wait_time_func
+
+
+class StagesShape(LoadTestShape):
+    stages = {{schedule}}
+
+    def tick(self):
+        global wait_time
+        run_time = self.get_run_time()
+
+        for stage in self.stages:
+            if run_time < stage["duration"]:
+                wait_time = 1 / stage["rps"]
+                self.runner.send_message('send_wait_time', {
+                    "wait_time": wait_time
+                })
+                tick_data = (stage["users"], stage["spawn_rate"])
+                return tick_data
+
+        return None
+
+
+class SQSUser(User):
+    wait_time = constant_configurable_throughput()
+
+    def __init__(self, *args, **kwargs):
+        super(SQSUser, self).__init__(*args, **kwargs)
+        session_path = self.environment.parsed_options.session_dir
+        with open(os.path.join(session_path, PARAMS_JSON_FILENAME)) as f:
+            self.params = SNSUserParams.parse_raw(f.read())
+
+        sns = boto3.resource('sns',
+                             region_name=self.params.aws_region,
+                             aws_access_key_id=self.params.access_key.get_secret_value(),
+                             aws_secret_access_key=self.params.secret_key.get_secret_value(),
+                             aws_session_token=self.params.session_token.get_secret_value() if self.params.session_token.get_secret_value() else None,
+                             config=botocore.config.Config(read_timeout=60,
+                                                           max_pool_connections=100,
+                                                           retries={
+                                                               'max_attempts': 4},
+                                                           ))
+
+        self.sns_topic = sns.Topic(arn=self.params.sns_arn)
+
+        self.req = self.params.query_json
+        self.message_attributes = self.params.message_attribute_json
+
+    @task
+    def sm(self):
+        req = random.choice(self.req)
+        start_time = time.perf_counter()
+        request_meta = {
+            "request_type": REQUEST_TYPE,
+            "name": NAME,
+            "response_length": 0,
+            "response": None,
+            "context": {},
+            "exception": None,
+        }
+        try:
+            response = self.sns_topic.publish(Message=json.dumps(req),
+                                              MessageAttributes=self.message_attributes,
+                                              )
+        except Exception as err:
+            request_meta["exception"] = err
+
+        request_meta["response_time"] = (time.perf_counter() - start_time) * 1000
+        events.request.fire(**request_meta)
+        return request_meta["response"]

@@ -1,0 +1,495 @@
+import json
+import time
+
+import botocore
+import botocore.config
+import sagemaker
+from elasticsearch import Elasticsearch
+from locust import task, events, constant, User
+
+import boto3
+from boto3 import Session
+from pymongo import MongoClient
+from sagemaker.pytorch import PyTorchPredictor
+from sagemaker.serializers import NumpySerializer, JSONSerializer
+from sagemaker.deserializers import JSONDeserializer, NumpyDeserializer
+from sagemaker.sklearn import SKLearnPredictor
+from sagemaker.tensorflow import TensorFlowPredictor
+
+from src.olaf.datamodel import (ElasticsearchUserParams, MongoDBUserParams, LambdaUserParams,
+                                CocktailUserParams, RestPostUserParams, RestGetUserParams, SagemakerUserParams,
+                                SNSUserParams, SQSUserParams)
+
+import requests
+
+from src.constants import PARAMS_JSON_FILENAME
+import os
+import random
+from src.olaf.custom_event_handler import add_session_dir_arg, on_test_quit
+
+events.init_command_line_parser.add_listener(add_session_dir_arg)
+events.quitting.add_listener(on_test_quit)
+
+
+class ElasticsearchClient(Elasticsearch):
+    NAME = "ES_Query"
+    REQUEST_TYPE = "ES_search"
+
+    def query(self, index, body):
+        start_time = time.perf_counter()
+        request_meta = {
+            "request_type": self.REQUEST_TYPE,
+            "name": self.NAME,
+            "response_length": 0,
+            "response": None,
+            "context": {},
+            "exception": None,
+        }
+
+        try:
+            request_meta["response"] = self.search(index=index,
+                                                   body=body,
+                                                   request_cache=False
+                                                   )
+        except Exception as err:
+            request_meta["exception"] = err
+
+        request_meta["response_time"] = (time.perf_counter() - start_time) * 1000
+        events.request.fire(**request_meta)
+        return request_meta["response"]
+
+
+class MongoReadClient(MongoClient):
+
+    def query(self, db_name, collection_name, body):
+
+        db = self.get_database(db_name)
+        collection = db.get_collection(collection_name)
+
+        start_time = time.perf_counter()
+        request_meta = {
+            "request_type": "mongo_db",
+            "name": f"{db_name}_{collection_name}",
+            "response_length": 0,
+            "response": None,
+            "context": {},
+            "exception": None,
+        }
+
+        try:
+            request_meta["response"] = collection.find_one(body)
+        except Exception as err:
+            request_meta["exception"] = err
+
+        request_meta["response_time"] = (time.perf_counter() - start_time) * 1000
+        events.request.fire(**request_meta)
+        return request_meta["response"]
+
+
+class SagemakerTensorFlowClient(TensorFlowPredictor):
+
+    def predictEx(self, data, name):
+        start_time = time.perf_counter()
+        request_meta = {
+            "request_type": "sagemaker_tensorflow_predict",
+            "name": name,
+            "response_length": 0,
+            "response": None,
+            "context": {},
+            "exception": None,
+        }
+        try:
+            request_meta["response"] = self.predict(data)
+        except Exception as err:
+            request_meta["exception"] = err
+
+        request_meta["response_time"] = (time.perf_counter() - start_time) * 1000
+        events.request.fire(**request_meta)
+        return request_meta["response"]
+
+
+class SagemakerPyTorchClient(PyTorchPredictor):
+
+    def predictEx(self, data, name):
+        start_time = time.perf_counter()
+        request_meta = {
+            "request_type": "sagemaker_pytorch_predict",
+            "name": name,
+            "response_length": 0,
+            "response": None,
+            "context": {},
+            "exception": None,
+        }
+        try:
+            request_meta["response"] = self.predict(data)
+        except Exception as err:
+            request_meta["exception"] = err
+
+        request_meta["response_time"] = (time.perf_counter() - start_time) * 1000
+        events.request.fire(**request_meta)
+        return request_meta["response"]
+
+
+class SagemakerSKLearnClient(SKLearnPredictor):
+
+    def predictEx(self, data, name):
+        start_time = time.perf_counter()
+        request_meta = {
+            "request_type": "sagemaker_sklearn_predict",
+            "name": name,
+            "response_length": 0,
+            "response": None,
+            "context": {},
+            "exception": None,
+        }
+        try:
+            request_meta["response"] = self.predict(data)
+        except Exception as err:
+            request_meta["exception"] = err
+
+        request_meta["response_time"] = (time.perf_counter() - start_time) * 1000
+        events.request.fire(**request_meta)
+        return request_meta["response"]
+
+{% for i in elasticsearch %}
+class ElasticsearchUser_{{ i }}(User):
+    wait_time = constant(0)
+    endpoint_index = {{ i }}
+
+    def __init__(self, *args, **kwargs):
+        super(ElasticsearchUser_{{ i }}, self).__init__(*args, **kwargs)
+        session_path = self.environment.parsed_options.session_dir
+        with open(os.path.join(session_path, PARAMS_JSON_FILENAME)) as f:
+            self.params: ElasticsearchUserParams = CocktailUserParams.parse_raw(f.read()).user_resources[self.endpoint_index]
+
+        self.client = ElasticsearchClient(self.params.url, http_auth=(self.params.access_key.get_secret_value(),
+                                                                      self.params.secret_key.get_secret_value()
+                                                                      ))
+        self.req = self.params.query_json
+
+    @task
+    def sm(self):
+        self.client.query(index=self.params.index_name, body=random.choice(self.req))
+{% endfor %}
+
+
+{% for i in lambda %}
+class LambdaUser_{{ i }}(User):
+    wait_time = constant(0)
+    endpoint_index = {{ i }}
+
+    def __init__(self, *args, **kwargs):
+        super(LambdaUser_{{ i }}, self).__init__(*args, **kwargs)
+        session_path = self.environment.parsed_options.session_dir
+        with open(os.path.join(session_path, PARAMS_JSON_FILENAME)) as f:
+            self.params: LambdaUserParams = CocktailUserParams.parse_raw(f.read()).user_resources[self.endpoint_index]
+
+        self.lambda_client = boto3.client('lambda',
+                                          region_name=self.params.aws_region,
+                                          aws_access_key_id=self.params.access_key.get_secret_value(),
+                                          aws_secret_access_key=self.params.secret_key.get_secret_value(),
+                                          aws_session_token=self.params.session_token.get_secret_value() if self.params.session_token.get_secret_value() else None,
+                                          config=botocore.config.Config(read_timeout=60,
+                                                                        max_pool_connections=100,
+                                                                        retries={
+                                                                            'max_attempts': 4},
+                                                                        ))
+        self.lamba_arn = self.params.lambda_arn
+        self.req = self.params.query_json
+
+    @task
+    def sm(self):
+        req = random.choice(self.req)
+        start_time = time.perf_counter()
+        request_meta = {
+            "request_type": self.params.kind,
+            "name": self.lamba_arn,
+            "response_length": 0,
+            "response": None,
+            "context": {},
+            "exception": None,
+        }
+
+        try:
+            response = self.lambda_client.invoke(FunctionName=self.lamba_arn,
+                                                 Payload=json.dumps({
+                                                     "body": json.dumps(req)
+                                                 }))
+            assert response["StatusCode"] == 200
+        except Exception as err:
+            request_meta["exception"] = err
+
+        request_meta["response_time"] = (time.perf_counter() - start_time) * 1000
+        events.request.fire(**request_meta)
+        return request_meta["response"]
+{% endfor %}
+
+
+{% for i in mongo_db %}
+class MongoReadUser_{{ i }}(User):
+    wait_time = constant(0)
+    endpoint_index = {{ i }}
+
+    def __init__(self, *args, **kwargs):
+        super(MongoReadUser_{{ i }}, self).__init__(*args, **kwargs)
+
+        session_path = self.environment.parsed_options.session_dir
+        with open(os.path.join(session_path, PARAMS_JSON_FILENAME)) as f:
+            self.params: MongoDBUserParams = CocktailUserParams.parse_raw(f.read()).user_resources[self.endpoint_index]
+
+        self.client = MongoReadClient(host=self.params.mongo_url.get_secret_value())
+        self.req = self.params.query_json
+
+    @task
+    def sm(self):
+        self.client.query(db_name=self.params.db_name,
+                          collection_name=self.params.collection_name,
+                          body=random.choice(self.req))
+{% endfor %}
+
+
+{% for i in rest_get %}
+class RestGetUser_{{ i }}(User):
+    wait_time = constant(0)
+    endpoint_index = {{ i }}
+
+    def __init__(self, *args, **kwargs):
+        super(RestGetUser_{{ i }}, self).__init__(*args, **kwargs)
+
+        session_path = self.environment.parsed_options.session_dir
+        with open(os.path.join(session_path, PARAMS_JSON_FILENAME)) as f:
+            self.params: RestGetUserParams = CocktailUserParams.parse_raw(f.read()).user_resources[self.endpoint_index]
+
+        self.client = requests.Session()
+
+    @task
+    def post_task(self):
+        start_time = time.perf_counter()
+        request_meta = {
+            "request_type": "rest_get",
+            "name": self.params.url,
+            "response_length": 0,
+            "response": None,
+            "context": {},
+            "exception": None,
+        }
+
+        try:
+            response = self.client.get(self.params.url,
+                                       headers=self.params.header_json,
+                                       )
+            response.raise_for_status()
+        except Exception as err:
+            request_meta["exception"] = err
+
+        request_meta["response_time"] = (time.perf_counter() - start_time) * 1000
+        events.request.fire(**request_meta)
+        return request_meta["response"]
+{% endfor %}
+
+
+{% for i in rest_post %}
+class RestPostUser_{{ i }}(User):
+    wait_time = constant(0)
+    endpoint_index = {{ i }}
+
+    def __init__(self, *args, **kwargs):
+        super(RestPostUser_{{ i }}, self).__init__(*args, **kwargs)
+
+        session_path = self.environment.parsed_options.session_dir
+        with open(os.path.join(session_path, PARAMS_JSON_FILENAME)) as f:
+            self.params: RestPostUserParams = CocktailUserParams.parse_raw(f.read()).user_resources[self.endpoint_index]
+
+        self.client = requests.Session()
+
+    @task
+    def post_task(self):
+        start_time = time.perf_counter()
+        request_meta = {
+            "request_type": "rest_post",
+            "name": self.params.url,
+            "response_length": 0,
+            "response": None,
+            "context": {},
+            "exception": None,
+        }
+
+        try:
+            response = self.client.post(self.params.url,
+                                        headers=self.params.header_json,
+                                        json=random.choice(self.params.query_json),
+                                        )
+            response.raise_for_status()
+        except Exception as err:
+            request_meta["exception"] = err
+
+        request_meta["response_time"] = (time.perf_counter() - start_time) * 1000
+        events.request.fire(**request_meta)
+        return request_meta["response"]
+{% endfor %}
+
+
+{% for i in sagemaker %}
+class SagemakerUser_{{ i }}(User):
+    wait_time = constant(0)
+    endpoint_index = {{ i }}
+    predictor_class_mapping = {
+        "pytorch predictor": SagemakerPyTorchClient,
+        "sklearn predictor": SagemakerSKLearnClient,
+        "tensorflow predictor": SagemakerTensorFlowClient,
+    }
+
+    def __init__(self, *args, **kwargs):
+        super(SagemakerUser_{{ i }}, self).__init__(*args, **kwargs)
+        session_path = self.environment.parsed_options.session_dir
+        with open(os.path.join(session_path, PARAMS_JSON_FILENAME)) as f:
+            self.params: SagemakerUserParams = CocktailUserParams.parse_raw(f.read()).user_resources[self.endpoint_index]
+
+        if self.params.input_serializer == "numpy":
+            serializer = NumpySerializer()
+        elif self.params.input_serializer == "json":
+            serializer = JSONSerializer()
+        else:
+            raise NotImplementedError
+
+        if self.params.output_deserializer == "numpy":
+            deserializer = NumpyDeserializer()
+        elif self.params.output_deserializer == "json":
+            deserializer = JSONDeserializer()
+        else:
+            raise NotImplementedError
+
+        boto_session = Session(aws_access_key_id=self.params.access_key.get_secret_value(),
+                               aws_secret_access_key=self.params.secret_key.get_secret_value(),
+                               aws_session_token=self.params.session_token.get_secret_value() if self.params.session_token.get_secret_value() else None,
+                               region_name=self.params.aws_region,
+                               )
+        sm_runtime_client = boto_session.client("runtime.sagemaker",
+                                                config=botocore.config.Config(read_timeout=60,
+                                                                              max_pool_connections=100,
+                                                                              retries={
+                                                                                  'max_attempts': 4},
+                                                                              ))
+        sm_session = sagemaker.Session(boto_session=boto_session,
+                                       sagemaker_runtime_client=sm_runtime_client
+                                       )
+
+        self.client = self.predictor_class_mapping[self.params.predictor_type](
+            sagemaker_session=sm_session,
+            endpoint_name=self.params.endpoint,
+            serializer=serializer,
+            deserializer=deserializer,
+        )
+        self.req = self.params.query_json
+
+    @task
+    def sm(self):
+        if self.params.batch_mode:
+            self.client.predictEx(random.choices(self.req, k=self.params.batch_value))
+        else:
+            self.client.predictEx(random.choice(self.req), name=self.params.endpoint)
+{% endfor %}
+
+
+{% for i in sns %}
+class SNSUser_{{ i }}(User):
+    wait_time = constant(0)
+    endpoint_index = {{ i }}
+
+    def __init__(self, *args, **kwargs):
+        super(SNSUser_{{ i }}, self).__init__(*args, **kwargs)
+        session_path = self.environment.parsed_options.session_dir
+        with open(os.path.join(session_path, PARAMS_JSON_FILENAME)) as f:
+            self.params: SNSUserParams = CocktailUserParams.parse_raw(f.read()).user_resources[self.endpoint_index]
+
+        sns = boto3.resource('sns',
+                             region_name=self.params.aws_region,
+                             aws_access_key_id=self.params.access_key.get_secret_value(),
+                             aws_secret_access_key=self.params.secret_key.get_secret_value(),
+                             aws_session_token=self.params.session_token.get_secret_value() if self.params.session_token.get_secret_value() else None,
+                             config=botocore.config.Config(read_timeout=60,
+                                                           max_pool_connections=100,
+                                                           retries={
+                                                               'max_attempts': 4},
+                                                           ))
+        self.sns_topic = sns.Topic(arn=self.params.sns_arn)
+
+        self.req = self.params.query_json
+        self.message_attributes = self.params.message_attribute_json
+
+    @task
+    def sm(self):
+        req = random.choice(self.req)
+        start_time = time.perf_counter()
+        request_meta = {
+            "request_type": "sns",
+            "name": self.sns_topic,
+            "response_length": 0,
+            "response": None,
+            "context": {},
+            "exception": None,
+        }
+        try:
+            response = self.sns_topic.publish(Message=json.dumps(req),
+                                              MessageAttributes=self.message_attributes,
+                                              )
+        except Exception as err:
+            request_meta["exception"] = err
+
+        request_meta["response_time"] = (time.perf_counter() - start_time) * 1000
+        events.request.fire(**request_meta)
+        return request_meta["response"]
+{% endfor %}
+
+
+{% for i in sqs %}
+class SQSUser_{{ i }}(User):
+    wait_time = constant(0)
+    endpoint_index = {{ i }}
+
+    def __init__(self, *args, **kwargs):
+        super(SQSUser_{{ i }}, self).__init__(*args, **kwargs)
+        session_path = self.environment.parsed_options.session_dir
+        with open(os.path.join(session_path, PARAMS_JSON_FILENAME)) as f:
+            self.params: SQSUserParams = CocktailUserParams.parse_raw(f.read()).user_resources[self.endpoint_index]
+
+        sqs = boto3.resource('sqs',
+                             region_name=self.params.aws_region,
+                             aws_access_key_id=self.params.access_key.get_secret_value(),
+                             aws_secret_access_key=self.params.secret_key.get_secret_value(),
+                             aws_session_token=self.params.session_token.get_secret_value() if self.params.session_token.get_secret_value() else None,
+                             config=botocore.config.Config(read_timeout=60,
+                                                           max_pool_connections=100,
+                                                           retries={
+                                                               'max_attempts': 4},
+                                                           ))
+
+        self.queue = sqs.get_queue_by_name(QueueName=self.params.sqs_name)
+
+        self.req = self.params.query_json
+        self.message_attributes = self.params.message_attribute_json
+
+    @task
+    def sm(self):
+        req = random.choice(self.req)
+        start_time = time.perf_counter()
+        request_meta = {
+            "request_type": "sqs",
+            "name": self.queue,
+            "response_length": 0,
+            "response": None,
+            "context": {},
+            "exception": None,
+        }
+
+        try:
+            response = self.queue.send_message(MessageBody=json.dumps(req),
+                                               MessageAttributes=self.message_attributes
+                                               )
+        except Exception as err:
+            request_meta["exception"] = err
+
+        request_meta["response_time"] = (time.perf_counter() - start_time) * 1000
+        events.request.fire(**request_meta)
+        return request_meta["response"]
+{% endfor %}
