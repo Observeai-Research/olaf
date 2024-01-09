@@ -22,7 +22,7 @@ streamlit = "1.9.0"
 kafka-python = "^2.0.2"
 redis = "^4.3.4"
 pinecone-client = "^2.2.4"
-protobuf = "3.20"
+protobuf = "3.20.2"
 altair = "<5"
 
 [tool.poetry.dev-dependencies]
